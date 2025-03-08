@@ -1,0 +1,20 @@
+<svg width="24" height="24" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <!-- Background Hexagon with Dark Red Gradient -->
+  <defs>
+    <linearGradient id="hexGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8B0000"/>
+      <stop offset="100%" stop-color="#B22222"/>
+    </linearGradient>
+  </defs>
+  <polygon points="100,20 180,60 180,140 100,180 20,140 20,60" stroke="#8B0000" stroke-width="8" fill="url(#hexGradient)"/>
+  
+  <!-- Code Symbol (</>) with White Color -->
+  <text x="50" y="120" font-family="monospace" font-size="65" fill="#FFFFFF">&lt;/&gt;</text>
+  
+  <!-- AI Chip Representation with Gold Color -->
+  <circle cx="100" cy="100" r="12" fill="#FFD700"/>
+  <line x1="100" y1="85" x2="100" y2="60" stroke="#FFD700" stroke-width="4"/>
+  <line x1="100" y1="115" x2="100" y2="140" stroke="#FFD700" stroke-width="4"/>
+  <line x1="85" y1="100" x2="60" y2="100" stroke="#FFD700" stroke-width="4"/>
+  <line x1="115" y1="100" x2="140" y2="100" stroke="#FFD700" stroke-width="4"/>
+</svg>

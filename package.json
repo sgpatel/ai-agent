@@ -1,0 +1,90 @@
+{
+  "name": "ai-assistant-ext",
+  "displayName": "AI Assistant",
+  "description": "AI-powered code assistant for VS Code by Shiv Patel",
+  "version": "0.0.2",
+  "publisher": "shivgovindpatel",
+  "repository": "https://git",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onCommand:aiAssistant.generateCode",
+    "onCommand:aiAssistant.openChatbox",
+    "onView:aiAssistant.chat",
+    "onView:aiAssistant.codeGeneration"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiAssistant.generateCode",
+        "title": "AI Assistant: Generate Code"
+      },
+      {
+        "command": "aiAssistant.openChatbox",
+        "title": "AI Assistant: Open Chatbox"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiAssistantSidebar",
+          "title": "AI Assistant",
+          "icon": "./media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "aiAssistantSidebar": [
+        {
+          "id": "aiAssistant.chat",
+          "name": "Chat",
+          "type": "webview"
+        },
+        {
+          "id": "aiAssistant.codeGeneration",
+          "name": "Code Generation",
+          "type": "webview"
+        }
+      ]
+    },
+    "configuration": {
+      "type": "object",
+      "title": "AI Assistant Configuration",
+      "properties": {
+        "aiAssistant.selectedProvider": {
+          "type": "string",
+          "default": "OpenAI",
+          "enum": ["OpenAI", "Ollama"],
+          "description": "Select the LLM provider to use."
+        },
+        "aiAssistant.openai.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for OpenAI."
+        },
+        "aiAssistant.ollama.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for Ollama."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^14.14.37",
+    "@types/vscode": "^1.60.0",
+    "typescript": "^4.2.3"
+  },
+  "dependencies": {
+    "ollama": "^0.5.14",
+    "openai": "^4.86.2"
+  }
+}
