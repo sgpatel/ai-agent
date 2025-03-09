@@ -2,59 +2,115 @@ import OpenAI from 'openai';
 import { LLMClient } from '../llmClient';
 import * as vscode from 'vscode';
 
-/**
- * OpenAI-specific implementation of the LLMClient interface.
- */
 export class OpenAIClient implements LLMClient {
-  private client: OpenAI;
+    private readonly client: OpenAI;
+    private readonly defaultModel = 'gpt-4o';
+    private readonly codeModel = 'gpt-4o';
+    private readonly maxTokens = 2000;
+    private readonly defaultTemperature = 0.7;
+    private readonly codeTemperature = 0.3;
 
-  constructor(apiKey: string) {
-    if (!apiKey) {
-      throw new Error('API key for OpenAI is missing. Please set it in settings.');
+    constructor(private apiKey: string) {
+        if (!apiKey?.trim()) {
+            throw new Error('OpenAI API key not configured');
+        }
+        
+        this.client = new OpenAI({
+            apiKey: apiKey.trim(),
+            timeout: 30000, // 30 seconds timeout
+            maxRetries: 2
+        });
     }
-    this.client = new OpenAI({ apiKey });
-  }
 
-  async generateCode(prompt: string): Promise<string> {
-    try {
-      const response = await this.client.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: 'You are a helpful code assistant.' },
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 2000,
-        temperature: 0.7,
-      });
-      const text = response.choices[0]?.message?.content;
-      if (text) {
-        return text.trim();
-      } else {
-        throw new Error('OpenAI API error: incomplete response');
-      }
-    } catch (error: any) {
-      console.error('OpenAI API error:', error.response?.status, error.response?.data || error);
-      throw new Error(`OpenAI API error: ${error.response?.status ? `Request failed with status code ${error.response.status}` : error.message}`);
+    async chat(messages: Array<{ role: string; content: string }>): Promise<string> {
+        try {
+            if (!messages?.length) {
+                throw new Error('No messages provided for chat');
+            }
+    
+            const validatedMessages = this.validateMessages(messages);
+            const completion = await this.client.chat.completions.create({
+                model: this.defaultModel,
+                messages: validatedMessages,
+                temperature: this.defaultTemperature,
+                max_tokens: this.maxTokens
+            });
+    
+            const content = this.extractContent(completion);
+            return content; // ✅ Properly resolved string
+        } catch (error) {
+            this.handleError(error);
+            throw error;
+        }
     }
-  }
 
-  async generateChatResponse(messages: { role: string; content: string }[]): Promise<string> {
-    try {
-      const response = await this.client.chat.completions.create({
-        model: 'gpt-4o',
-        messages: messages as OpenAI.Chat.ChatCompletionCreateParams['messages'],
-        max_tokens: 2000,
-        temperature: 0.7,
-      });
-      const text = response.choices[0]?.message?.content;
-      if (text) {
-        return text.trim();
-      } else {
-        throw new Error('OpenAI API error: incomplete response');
-      }
-    } catch (error: any) {
-      console.error('OpenAI API error:', error.response?.status, error.response?.data || error);
-      throw new Error(`OpenAI API error: ${error.response?.status ? `Request failed with status code ${error.response.status}` : error.message}`);
+    async generate(prompt: string, type: 'code' | 'text'): Promise<string> {
+        try {
+            if (!prompt?.trim()) {
+                throw new Error('No prompt provided for generation');
+            }
+
+            const completion = await this.client.chat.completions.create({
+                model: this.codeModel,
+                messages: [{
+                    role: 'user',
+                    content: prompt.trim()
+                }],
+                temperature: type === 'code' ? this.codeTemperature : this.defaultTemperature,
+                max_tokens: this.maxTokens
+            });
+
+            return this.extractContent(completion);
+        } catch (error) {
+            this.handleError(error);
+            throw error;
+        }
     }
-  }
+
+    private validateMessages(messages: Array<{ role: string; content: string }>): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+        return messages.map(msg => ({
+            role: this.validateRole(msg.role),
+            content: msg.content.trim()
+        }));
+    }
+
+    private validateRole(role: string): 'system' | 'user' | 'assistant' {
+        if (['system', 'user', 'assistant'].includes(role)) {
+            return role as 'system' | 'user' | 'assistant';
+        }
+        throw new Error(`Invalid role: ${role}`);
+    }
+
+    private extractContent(completion: OpenAI.Chat.Completions.ChatCompletion): string {
+        if (!completion.choices?.length) {
+            throw new Error('No completion choices returned');
+        }
+
+        const content = completion.choices[0].message?.content?.trim();
+        if (!content) {
+            throw new Error('Empty response content from API');
+        }
+
+        return content;
+    }
+
+    private handleError(error: unknown): void {
+        if (error instanceof OpenAI.APIError) {
+            const statusMessage = error.status ? ` (Status: ${error.status})` : '';
+            vscode.window.showErrorMessage(`OpenAI API Error${statusMessage}: ${error.message}`);
+            console.error('OpenAI API Error:', {
+                status: error.status,
+                message: error.message,
+                code: error.code,
+                type: error.type
+            });
+        } else if (error instanceof Error) {
+            vscode.window.showErrorMessage(`AI Error: ${error.message}`);
+            console.error('Generation Error:', error);
+        } else {
+            const errorMessage = 'Unknown error occurred during AI operation';
+            vscode.window.showErrorMessage(errorMessage);
+            console.error(errorMessage, error);
+        }
+    }
 }

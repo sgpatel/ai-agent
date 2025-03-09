@@ -1,20 +1,35 @@
+// llmClient.ts - LLM abstraction layer
+import * as vscode from 'vscode';
+import { AIConfig } from './aiAssistant';
+import { OpenAIClient } from './clients/openAIClient';
+import { OllamaClient } from './clients/ollamaClient';
+// llmClient.ts
 
-/**
- * Interface for interacting with different LLM providers.
- * Implementations must provide methods for code generation and other features.
- */
 export interface LLMClient {
-    /**
-     * Generates code based on the provided prompt.
-     * @param prompt User-provided text to guide code generation.
-     * @returns Promise resolving to the generated code string.
-     */
-    generateCode(prompt: string): Promise<string>;
+    chat(messages: Array<{ role: string; content: string }>): Promise<string>;
+    generate(prompt: string, type: 'code' | 'text'): Promise<string>;
+}
 
-    /**
-     * Generates a chat response based on the provided messages.
-     * @param messages Array of message objects with role and content.
-     * @returns Promise resolving to the generated chat response string.
-     */
-    generateChatResponse(messages: { role: string, content: string }[]): Promise<string>;
+export function getLLMClient(config: AIConfig): LLMClient {
+    const provider = config.selectedProvider;
+    const apiKey = config.apiKeys[provider.toLowerCase() as keyof typeof config.apiKeys];
+
+    if (!apiKey) {
+        const message = `${provider} API key not configured. Please set it in settings.`;
+        vscode.window.showErrorMessage(message, 'Open Settings').then(selection => {
+            if (selection === 'Open Settings') {
+                vscode.commands.executeCommand('aiAssistant.showSettings');
+            }
+        });
+        throw new Error(message);
+    }
+
+    switch (provider) {
+        case 'OpenAI':
+            return new OpenAIClient(apiKey);
+        case 'Ollama':
+            return new OllamaClient(apiKey);
+        default:
+            throw new Error(`Unsupported provider: ${provider}`);
+    }
 }

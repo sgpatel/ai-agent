@@ -2,16 +2,22 @@
   "name": "ai-assistant-ext",
   "displayName": "AI Assistant",
   "description": "AI-powered code assistant for VS Code by Shiv Patel",
-  "version": "0.0.2",
+  "version": "0.0.5",
   "publisher": "shivgovindpatel",
-  "repository": "https://git",
+  "repository": "https://github.com/yourusername/your-repo",
   "engines": {
-    "vscode": "^1.60.0"
+    "vscode": "^1.82.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
   "activationEvents": [
     "onCommand:aiAssistant.generateCode",
     "onCommand:aiAssistant.openChatbox",
+    "onCommand:aiAssistant.openSettings",
+    "onCommand:aiAssistant.explainCode",
+    "onCommand:aiAssistant.generateTest",
     "onView:aiAssistant.chat",
     "onView:aiAssistant.codeGeneration"
   ],
@@ -25,6 +31,21 @@
       {
         "command": "aiAssistant.openChatbox",
         "title": "AI Assistant: Open Chatbox"
+      },
+      {
+        "command": "aiAssistant.openSettings",
+        "title": "Open AI Settings",
+        "category": "AI Assistant"
+      },
+      {
+        "command": "aiAssistant.explainCode",
+        "title": "Explain Code",
+        "category": "AI Assistant"
+      },
+      {
+        "command": "aiAssistant.generateTest",
+        "title": "Generate Tests",
+        "category": "AI Assistant"
       }
     ],
     "viewsContainers": {
@@ -32,7 +53,7 @@
         {
           "id": "aiAssistantSidebar",
           "title": "AI Assistant",
-          "icon": "./media/icon.svg"
+          "icon": "media/icon.svg"
         }
       ]
     },
@@ -48,27 +69,52 @@
           "name": "Code Generation",
           "type": "webview"
         }
+      ],
+      "explorer": [
+        {
+          "id": "aiAssistant.settings",
+          "name": "AI Settings"
+        }
       ]
     },
     "configuration": {
-      "type": "object",
-      "title": "AI Assistant Configuration",
+      "title": "AI Assistant",
       "properties": {
         "aiAssistant.selectedProvider": {
           "type": "string",
+          "enum": [
+            "OpenAI",
+            "Ollama"
+          ],
           "default": "OpenAI",
-          "enum": ["OpenAI", "Ollama"],
-          "description": "Select the LLM provider to use."
+          "description": "Select preferred AI provider"
         },
-        "aiAssistant.openai.apiKey": {
+        "aiAssistant.apiKeys.openai": {
           "type": "string",
           "default": "",
-          "description": "API key for OpenAI."
+          "description": "OpenAI API key",
+          "scope": "application"
         },
-        "aiAssistant.ollama.apiKey": {
+        "aiAssistant.apiKeys.ollama": {
           "type": "string",
           "default": "",
-          "description": "API key for Ollama."
+          "description": "Ollama API key",
+          "scope": "application"
+        },
+        "aiAssistant.maxContextLines": {
+          "type": "number",
+          "default": 10,
+          "description": "Number of context lines to send with requests"
+        },
+        "aiAssistant.enableInline": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable inline code completions"
+        },
+        "aiAssistant.preferredModels": {
+          "type": "object",
+          "default": {},
+          "description": "Preferred models for different tasks"
         }
       }
     }
@@ -76,14 +122,26 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext .ts",
+    "package": "vsce package"
   },
   "devDependencies": {
-    "@types/node": "^14.14.37",
-    "@types/vscode": "^1.60.0",
-    "typescript": "^4.2.3"
+    "@types/diff": "^7.0.1",
+    "@types/marked": "^6.0.0",
+    "@types/node": "^22.13.10",
+    "@types/vscode": "^1.82.0",
+    "@types/web": "^0.0.208",
+    "@typescript-eslint/eslint-plugin": "^7.0.1",
+    "@typescript-eslint/parser": "^7.0.1",
+    "eslint": "^8.56.0",
+    "typescript": "^5.8.2",
+    "vsce": "^2.15.0"
   },
   "dependencies": {
+    "diff": "^7.0.0",
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.7",
     "ollama": "^0.5.14",
     "openai": "^4.86.2"
   }
