@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { escapeHtml } from './utils';
 import { getLLMClient } from './llmClient';
 import * as marked from 'marked';
+import { AIConfig } from './aiAssistant';
 
 interface ChatMessage {
     role: string;
@@ -11,19 +12,25 @@ interface ChatMessage {
     codeContext?: string;
 }
 
+/**
+ * ChatViewProvider manages the chat interface for the AI Assistant.
+ */
 export class ChatViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private _context: vscode.ExtensionContext;
     private _messages: ChatMessage[] = [];
     private _typingInterval?: NodeJS.Timeout;
     private _isProcessing = false;
+    private llmClient: any;
 
     constructor(context: vscode.ExtensionContext) {
         this._context = context;
         this._messages = context.globalState.get('chatHistory', []) || [];
+        this.llmClient = getLLMClient(this.getConfig());
     }
 
     resolveWebviewView(webviewView: vscode.WebviewView) {
+        console.log('ChatViewProvider: Webview resolved');
         this._view = webviewView;
         webviewView.webview.options = {
             enableScripts: true,
@@ -36,7 +43,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     private getCodeContext(): string {
         const editor = vscode.window.activeTextEditor;
-        if (!editor) return '';
+        if (!editor) {
+            return '';
+        }
         
         const doc = editor.document;
         const selection = editor.selection;
@@ -71,8 +80,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             this.showTypingIndicator();
             this.updateWebview();
 
-            const client = getLLMClient(this.getConfig());
-            const response = await client.chat([
+            const response = await this.llmClient.chat([
                 this.getSystemMessage(),
                 ...this._messages.map(m => ({ role: m.role, content: m.content }))
             ]);
@@ -85,8 +93,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
             this._messages.push(assistantMessage);
             this._context.globalState.update('chatHistory', this._messages);
-        } catch (error: any) {
-            vscode.window.showErrorMessage(`Chat error: ${error.message}`);
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                vscode.window.showErrorMessage(`Chat error: ${error.message}`);
+            } else {
+                vscode.window.showErrorMessage('An unknown error occurred.');
+            }
         } finally {
             this._isProcessing = false;
             this.hideTypingIndicator();
@@ -142,6 +154,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     this._context.globalState.update('chatHistory', []);
                     this.updateWebview();
                     break;
+                
+                case 'plot':
+                    await this.createPlotPanel(message.content);
+                    break;
             }
         });
     }
@@ -172,62 +188,62 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 <style>
                     ${this.getStyles()}
                 </style>
-                <script>
-                    const vscode = acquireVsCodeApi();
-                    
-                    function setupEventListeners() {
-                        document.getElementById('send').addEventListener('click', () => {
-                            const input = document.getElementById('input');
-                            if (input.value.trim()) {
-                                vscode.postMessage({ command: 'send', text: input.value });
-                                input.value = '';
-                            }
-                        });
-
-                        document.getElementById('clear').addEventListener('click', () => {
-                            vscode.postMessage({ command: 'clear' });
-                        });
-
-                        document.body.addEventListener('click', (event) => {
-                            if (event.target.classList.contains('copy-code')) {
-                                const code = event.target.dataset.code;
-                                navigator.clipboard.writeText(code);
-                                vscode.postMessage({
-                                    command: 'showInfo',
-                                    text: 'Code copied to clipboard'
-                                });
-                            }
-                            
-                            if (event.target.classList.contains('insert-code')) {
-                                const code = event.target.dataset.code;
-                                vscode.postMessage({
-                                    command: 'insertCode',
-                                    code
-                                });
-                            }
-                        });
-
-                        const textarea = document.getElementById('input');
-                        textarea.addEventListener('input', () => {
-                            textarea.style.height = 'auto';
-                            textarea.style.height = textarea.scrollHeight + 'px';
-                        });
-                    }
-
-                    document.addEventListener('DOMContentLoaded', setupEventListeners);
-                </script>
+                <link rel="stylesheet" 
+                    href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+                <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
             </head>
             <body>
                 <div id="chat-container">
                     ${messagesHtml}
                 </div>
-                <div id="input-container">
-                    <textarea id="input" placeholder="Ask me anything..."></textarea>
-                    <div class="button-group">
-                        <button id="send">Send</button>
-                        <button id="clear">Clear</button>
-                    </div>
-                </div>
+                <script>
+                    hljs.highlightAll();
+                    mermaid.initialize({ 
+                        startOnLoad: true,
+                        theme: 'dark'
+                    });
+                    const container = document.getElementById('chat-container');
+                    container.scrollTop = container.scrollHeight;
+                </script>
+                 <div id="input-container">
+            <textarea id="chat-input" placeholder="Type a message..."></textarea>
+            <div class="button-group">
+                <button id="send-button">Send</button>
+                <button id="clear-button">Clear Chat</button>
+            </div>
+        </div>
+
+        <script>
+            const vscode = acquireVsCodeApi();
+            const chatInput = document.getElementById('chat-input');
+            const sendButton = document.getElementById('send-button');
+            const clearButton = document.getElementById('clear-button');
+
+            sendButton.addEventListener('click', () => {
+                const text = chatInput.value;
+                if (text.trim()) {
+                    vscode.postMessage({
+                        command: 'send',
+                        text: text
+                    });
+                    chatInput.value = '';
+                }
+            });
+
+            clearButton.addEventListener('click', () => {
+                vscode.postMessage({
+                    command: 'clear'
+                });
+            });
+
+            chatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendButton.click();
+                }
+            });
+        </script>
             </body>
             </html>
         `;
@@ -268,10 +284,89 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     </div>
                 `
             );
-        } catch (error) {
-            console.error('Error formatting content:', error);
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                console.error('Error formatting content:', error);
+            } else {
+                console.error('An unknown error occurred while formatting content.');
+            }
             return escapeHtml(content);
         }
+    }
+
+    private async createPlotPanel(plotData: string) {
+        try {
+            const panel = vscode.window.createWebviewPanel(
+                'plotPanel', // Identifies the type of the webview. Used internally
+                'Plot', // Title of the panel displayed to the user
+                vscode.ViewColumn.One, // Editor column to show the new webview panel in.
+                {} // Webview options.
+            );
+
+            // Set the webview's HTML content
+            panel.webview.html = this.getPlotHtml(plotData);
+
+            // Wait for the plot data to be generated
+            const generatedData = await this.llmClient.generatePlot(plotData);
+
+            // Display the generated data in the chat box
+            this.displayChatBox(generatedData);
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                vscode.window.showErrorMessage(`Error creating plot panel: ${error.message}`);
+            } else {
+                vscode.window.showErrorMessage('An unknown error occurred.');
+            }
+        }
+    }
+
+    private getPlotHtml(plotData: string): string {
+        return `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+            </head>
+            <body>
+                <div id="plot"></div>
+                <script>
+                    const data = ${plotData};
+                    Plotly.newPlot('plot', data);
+                </script>
+            </body>
+            </html>
+        `;
+    }
+
+    private displayChatBox(generatedData: string) {
+        const message: ChatMessage = {
+            role: 'assistant',
+            content: generatedData,
+            timestamp: Date.now()
+        };
+
+        this._messages.push(message);
+        this.updateWebview();
+    }
+
+    private async processExplanation(text: string): Promise<string> {
+        text = text.replace(/```mermaid\n([\s\S]*?)```/g, (_, diagram) => 
+            `<div class="mermaid">${diagram}</div>`
+        );
+        text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => 
+            `<pre><code class="language-${lang || 'plaintext'}">${escapeHtml(code)}</code></pre>`
+        );
+        
+        // Await the result of marked.parse
+        const parsedText = await marked.parse(text);
+        
+        return parsedText
+            .replace(/### (.*?)\n/g, '<h3>$1</h3>')
+            .replace(/## (.*?)\n/g, '<h2>$1</h2>')
+            .replace(/# (.*?)\n/g, '<h1>$1</h1>')
+            .replace(/\n/g, '<br>');
     }
 
     private getStyles(): string {
@@ -384,12 +479,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 gap: 4px;
             }
 
-            pre {
-                margin: 0;
-                padding: 10px;
-                background: var(--vscode-editor-background) !important;
+            .mermaid {
+                background: var(--vscode-editor-background);
+                padding: 1rem;
+                border-radius: 4px;
+                margin: 1rem 0;
             }
-
+            pre {
+                background: var(--vscode-editor-background);
+                padding: 1rem;
+                border-radius: 4px;
+                margin: 1rem 0;
+            }
             code {
                 font-family: var(--vscode-editor-font-family);
                 font-size: var(--vscode-editor-font-size);
@@ -397,17 +498,31 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         `;
     }
 
-    private getConfig() {
+    private getConfig(): AIConfig {
         const config = vscode.workspace.getConfiguration('aiAssistant');
         return {
-            maxContextLines: config.get<number>('maxContextLines', 10),
-            selectedProvider: config.get<string>('selectedProvider', 'OpenAI'),
-            enableInline: config.get<boolean>('enableInline', true),
-            preferredModels: config.get<{ [key: string]: string }>('preferredModels', {}),
-            apiKeys: {
-                openai: config.get<string>('apiKeys.openai', ''),
-                ollama: config.get<string>('apiKeys.ollama', '')
-            }
+            selectedProvider: config.get('selectedProvider', 'OpenAI'),
+            maxContextLines: config.get('maxContextLines', 10),
+            enableInline: config.get('enableInline', true),
+            preferredModels: config.get('preferredModels', {}),
+            apiKeys: config.get('apiKeys', {}),
+            codeReviewLevel: config.get('codeReviewLevel', 'basic'),
+            testFramework: config.get('testFramework', 'jest'),
+            generateComments: config.get('generateComments', false)
         };
+    }
+
+    private async handlePlotCommand(content: string) {
+        try {
+            const client = getLLMClient(this.getConfig());
+            const plotData = await client.generatePlot(content);
+            this.createPlotPanel(plotData);
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                vscode.window.showErrorMessage(`Plot error: ${error.message}`);
+            } else {
+                vscode.window.showErrorMessage('An unknown error occurred.');
+            }
+        }
     }
 }

@@ -2,7 +2,7 @@
   "name": "ai-assistant-ext",
   "displayName": "AI Assistant",
   "description": "AI-powered code assistant for VS Code by Shiv Patel",
-  "version": "0.0.5",
+  "version": "0.0.7",
   "publisher": "shivgovindpatel",
   "repository": "https://github.com/yourusername/your-repo",
   "engines": {

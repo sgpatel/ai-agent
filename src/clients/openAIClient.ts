@@ -1,116 +1,88 @@
-import OpenAI from 'openai';
 import { LLMClient } from '../llmClient';
-import * as vscode from 'vscode';
 
 export class OpenAIClient implements LLMClient {
-    private readonly client: OpenAI;
-    private readonly defaultModel = 'gpt-4o';
-    private readonly codeModel = 'gpt-4o';
-    private readonly maxTokens = 2000;
-    private readonly defaultTemperature = 0.7;
-    private readonly codeTemperature = 0.3;
+    private apiKey: string;
 
-    constructor(private apiKey: string) {
-        if (!apiKey?.trim()) {
-            throw new Error('OpenAI API key not configured');
-        }
-        
-        this.client = new OpenAI({
-            apiKey: apiKey.trim(),
-            timeout: 30000, // 30 seconds timeout
-            maxRetries: 2
-        });
+    constructor(apiKey: string) {
+        this.apiKey = apiKey;
     }
 
     async chat(messages: Array<{ role: string; content: string }>): Promise<string> {
-        try {
-            if (!messages?.length) {
-                throw new Error('No messages provided for chat');
-            }
-    
-            const validatedMessages = this.validateMessages(messages);
-            const completion = await this.client.chat.completions.create({
-                model: this.defaultModel,
-                messages: validatedMessages,
-                temperature: this.defaultTemperature,
-                max_tokens: this.maxTokens
-            });
-    
-            const content = this.extractContent(completion);
-            return content; // ✅ Properly resolved string
-        } catch (error) {
-            this.handleError(error);
-            throw error;
-        }
+        const systemPrompt = `You are an expert coding assistant. Follow these rules:
+        1. Format code using markdown with syntax highlighting
+        2. For diagrams, use Mermaid syntax
+        3. Provide clear explanations with examples`;
+        
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-4',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    ...messages
+                ],
+                temperature: 0.7
+            })
+        });
+
+        const data = await response.json();
+        return data.choices[0].message.content;
     }
 
     async generate(prompt: string, type: 'code' | 'text'): Promise<string> {
-        try {
-            if (!prompt?.trim()) {
-                throw new Error('No prompt provided for generation');
-            }
+        // Define the system prompt based on the type of generation
+        const systemPrompt = type === 'code'
+            ? `You are an expert coding assistant. Follow these rules:
+               1. Generate clean, efficient, and well-documented code.
+               2. Use markdown with syntax highlighting for code blocks.
+               3. Provide a brief explanation of the code if necessary.`
+            : `You are an expert content writer. Follow these rules:
+               1. Generate clear, concise, and well-structured text.
+               2. Use markdown for formatting (e.g., headings, lists, bold/italic).
+               3. Ensure the content is relevant to the given prompt.`;
+    
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-4',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.7
+            })
+        });
+    
+        const data = await response.json();
+        return data.choices[0].message.content;
+    }
 
-            const completion = await this.client.chat.completions.create({
-                model: this.codeModel,
+    async generatePlot(content: string): Promise<string> {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-4',
                 messages: [{
                     role: 'user',
-                    content: prompt.trim()
+                    content: `Generate Plotly JSON data for: ${content}`
                 }],
-                temperature: type === 'code' ? this.codeTemperature : this.defaultTemperature,
-                max_tokens: this.maxTokens
-            });
+                temperature: 0.7
+            })
+        });
 
-            return this.extractContent(completion);
-        } catch (error) {
-            this.handleError(error);
-            throw error;
-        }
-    }
-
-    private validateMessages(messages: Array<{ role: string; content: string }>): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
-        return messages.map(msg => ({
-            role: this.validateRole(msg.role),
-            content: msg.content.trim()
-        }));
-    }
-
-    private validateRole(role: string): 'system' | 'user' | 'assistant' {
-        if (['system', 'user', 'assistant'].includes(role)) {
-            return role as 'system' | 'user' | 'assistant';
-        }
-        throw new Error(`Invalid role: ${role}`);
-    }
-
-    private extractContent(completion: OpenAI.Chat.Completions.ChatCompletion): string {
-        if (!completion.choices?.length) {
-            throw new Error('No completion choices returned');
-        }
-
-        const content = completion.choices[0].message?.content?.trim();
-        if (!content) {
-            throw new Error('Empty response content from API');
-        }
-
-        return content;
-    }
-
-    private handleError(error: unknown): void {
-        if (error instanceof OpenAI.APIError) {
-            const statusMessage = error.status ? ` (Status: ${error.status})` : '';
-            vscode.window.showErrorMessage(`OpenAI API Error${statusMessage}: ${error.message}`);
-            console.error('OpenAI API Error:', {
-                status: error.status,
-                message: error.message,
-                code: error.code,
-                type: error.type
-            });
-        } else if (error instanceof Error) {
-            vscode.window.showErrorMessage(`AI Error: ${error.message}`);
-            console.error('Generation Error:', error);
-        } else {
-            const errorMessage = 'Unknown error occurred during AI operation';
-            vscode.window.showErrorMessage(errorMessage);
-            console.error(errorMessage, error);
-        }
+        const data = await response.json();
+        return data.choices[0].message.content;
     }
 }
