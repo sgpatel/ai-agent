@@ -207,71 +207,118 @@ export class AIAssistant {
     private getExplanationHtml(explanation: string, code: string): string {
         const isChatMode = this._currentViewMode === ViewMode.Chat;
         return `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <style>
-                    ${this.getCommonStyles()}
-                    .mode-toggle {
-                        display: flex;
-                        gap: 8px;
-                        margin-bottom: 16px;
-                    }
-                    .mode-button {
-                        padding: 8px 16px;
-                        border-radius: 4px;
-                        cursor: pointer;
-                        border: 1px solid var(--vscode-button-border);
-                        background: var(--vscode-button-background);
-                        color: var(--vscode-button-foreground);
-                    }
-                    .mode-button.active {
-                        background: var(--vscode-button-hoverBackground);
-                    }
-                    .code-block { 
-                        background: var(--vscode-editor-background);
-                        border: 1px solid var(--vscode-editorWidget-border);
-                        border-radius: 4px;
-                        padding: 10px;
-                        margin: 10px 0;
-                    }
-                    .explanation {
-                        line-height: 1.6;
-                        font-size: 14px;
-                    }
-                </style>
-                <link rel="stylesheet" 
-                    href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
-                <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-            </head>
-            <body>
-                <div class="mode-toggle">
-                    <button class="mode-button ${isChatMode ? 'active' : ''}" 
-                        onclick="switchMode('chat')">Chat</button>
-                    <button class="mode-button ${!isChatMode ? 'active' : ''}"
-                        onclick="switchMode('code')">Code Generation</button>
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                ${this.getCommonStyles()}
+                .mode-toggle {
+                    display: inline-block;
+                    background: var(--vscode-button-secondaryBackground);
+                    border: 1px solid var(--vscode-button-border);
+                    border-radius: 16px;
+                    padding: 2px;
+                    margin-bottom: 16px;
+                }
+                .mode-button {
+                    padding: 6px 16px;
+                    border: none;
+                    background: transparent;
+                    color: var(--vscode-button-secondaryForeground);
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    font-size: 14px;
+                    outline: none;
+                }
+                .mode-button.active {
+                    background: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border-radius: 14px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                }
+                .mode-button:hover:not(.active) {
+                    background: var(--vscode-button-secondaryHoverBackground);
+                }
+                .content-tab {
+                    background: var(--vscode-editor-background);
+                    border: 1px solid var(--vscode-editorWidget-border);
+                    border-radius: 4px;
+                    padding: 10px;
+                    margin: 10px 0;
+                }
+                .content-section {
+                    display: none;
+                }
+                .content-section.active {
+                    display: block;
+                }
+                .explanation {
+                    line-height: 1.6;
+                    font-size: 14px;
+                }
+                pre {
+                    margin: 0;
+                }
+            </style>
+            <link rel="stylesheet" 
+                href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+        </head>
+        <body>
+            <div class="mode-toggle">
+                <button class="mode-button active" 
+                    onclick="switchTab('chat')" id="chat-btn">Chat</button>
+                <button class="mode-button"
+                    onclick="switchTab('code')" id="code-btn">Code Generation</button>
+            </div>
+
+            <div class="content-tab">
+                <div class="content-section active" id="chat-content">
+                    <h1>Code Explanation</h1>
+                    <div class="explanation">
+                        ${this.processExplanation(explanation)}
+                    </div>
                 </div>
-                <h1>${isChatMode ? 'Code Explanation' : 'Generated Code'}</h1>
-                <div class="code-block">
+                <div class="content-section" id="code-content">
+                    <h1>Generated Code</h1>
                     <pre><code class="language-${vscode.window.activeTextEditor?.document.languageId}">${escapeHtml(code)}</code></pre>
                 </div>
-                <div class="explanation">
-                    ${this.processExplanation(explanation)}
-                </div>
-                <script>
-                    hljs.highlightAll();
-                    const vscode = acquireVsCodeApi();
-                    function switchMode(mode) {
-                        vscode.postMessage({
-                            command: 'switchMode',
-                            mode: mode
-                        });
+            </div>
+
+            <script>
+                hljs.highlightAll();
+                const vscode = acquireVsCodeApi();
+                
+                function switchTab(mode) {
+                    // Update button states
+                    const chatBtn = document.getElementById('chat-btn');
+                    const codeBtn = document.getElementById('code-btn');
+                    const chatContent = document.getElementById('chat-content');
+                    const codeContent = document.getElementById('code-content');
+
+                    if (mode === 'chat') {
+                        chatBtn.classList.add('active');
+                        codeBtn.classList.remove('active');
+                        chatContent.classList.add('active');
+                        codeContent.classList.remove('active');
+                    } else {
+                        codeBtn.classList.add('active');
+                        chatBtn.classList.remove('active');
+                        codeContent.classList.add('active');
+                        chatContent.classList.remove('active');
                     }
-                </script>
-            </body>
-            </html>
+
+                    // Notify VS Code of mode switch (optional)
+                    vscode.postMessage({
+                        command: 'switchMode',
+                        mode: mode
+                    });
+                }
+            </script>
+        </body>
+        </html>
         `;
     }
 
