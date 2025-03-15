@@ -31,7 +31,10 @@ export class CodeGenerationViewProvider implements vscode.WebviewViewProvider {
             maxContextLines: config.get('maxContextLines', 10),
             enableInline: config.get('enableInline', true),
             preferredModels: config.get('preferredModels', {}),
-            apiKeys: config.get('apiKeys', {})
+            apiKeys: config.get('apiKeys', {}),
+            codeReviewLevel: config.get('codeReviewLevel', 'basic'),
+            testFramework: config.get('testFramework', 'jest'),
+            generateComments: config.get('generateComments', false)
         };
     }
 

@@ -9,6 +9,19 @@ export interface AIConfig {
     enableInline: boolean;
     preferredModels: { [key: string]: string };
     apiKeys: { [key: string]: string };
+    codeReviewLevel: 'basic' | 'detailed';
+    testFramework: string;
+    generateComments: boolean;
+}
+
+enum ViewMode {
+    Chat = 'chat',
+    CodeGeneration = 'code'
+}
+
+interface WebviewMessage {
+    command: string;
+    mode?: ViewMode;
 }
 
 export class AIAssistant {
@@ -17,6 +30,7 @@ export class AIAssistant {
     private _decorationType: vscode.TextEditorDecorationType;
     private _inlineTimeout?: NodeJS.Timeout;
     private _isProcessing = false;
+    private _currentViewMode: ViewMode = ViewMode.Chat;
 
     constructor(context: vscode.ExtensionContext) {
         this._context = context;
@@ -29,6 +43,7 @@ export class AIAssistant {
         context.subscriptions.push(
             vscode.commands.registerCommand('aiAssistant.explainCode', this.explainSelection),
             vscode.commands.registerCommand('aiAssistant.generateTest', this.generateTest),
+            vscode.commands.registerCommand('aiAssistant.codeReview', this.codeReview),
             vscode.window.onDidChangeTextEditorSelection(this.handleSelectionChange)
         );
     }
@@ -43,7 +58,10 @@ export class AIAssistant {
             apiKeys: {
                 openai: config.get<string>('apiKeys.openai', ''),
                 ollama: config.get<string>('apiKeys.ollama', '')
-            }
+            },
+            codeReviewLevel: config.get<'basic' | 'detailed'>('codeReviewLevel', 'basic'),
+            testFramework: config.get<string>('testFramework', 'jest'),
+            generateComments: config.get<boolean>('generateComments', false)
         };
     }
 
@@ -56,7 +74,9 @@ export class AIAssistant {
         this._isProcessing = true;
         try {
             const editor = vscode.window.activeTextEditor;
-            if (!editor) return;
+            if (!editor) {
+                return;
+            }
 
             const selection = editor.document.getText(editor.selection);
             if (!selection) {
@@ -68,7 +88,8 @@ export class AIAssistant {
             this._statusBar.show();
 
             const client = getLLMClient(this.getConfig());
-            const prompt = `Generate unit tests for this ${editor.document.languageId} code:\n${selection}`;
+            const config = this.getConfig();
+            const prompt = `Generate ${config.testFramework} unit tests for this ${editor.document.languageId} code${config.generateComments ? ' with detailed comments' : ''}:\n${selection}`;
             const tests = await client.generate(prompt, 'code');
 
             this.showExplanationPanel(tests, selection, 'Generated Tests');
@@ -88,7 +109,9 @@ export class AIAssistant {
 
         this._isProcessing = true;
         const editor = vscode.window.activeTextEditor;
-        if (!editor) return;
+        if (!editor) {
+            return;
+        }
 
         const selection = editor.document.getText(editor.selection);
         if (!selection) {
@@ -115,6 +138,44 @@ export class AIAssistant {
         }
     };
 
+    codeReview = async () => {
+        if (this._isProcessing) {
+            vscode.window.showWarningMessage('Please wait for the current operation to complete');
+            return;
+        }
+
+        this._isProcessing = true;
+        try {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                return;
+            }
+
+            const selection = editor.document.getText(editor.selection);
+            if (!selection) {
+                vscode.window.showWarningMessage('No code selected');
+                return;
+            }
+
+            this._statusBar.text = '$(sync~spin) Reviewing code...';
+            this._statusBar.show();
+
+            const client = getLLMClient(this.getConfig());
+            const config = this.getConfig();
+            const prompt = `Perform a ${config.codeReviewLevel} code review for this ${editor.document.languageId} code:\n${selection}`;
+            const review = await client.chat([
+                { role: 'user', content: prompt }
+            ]);
+
+            this.showExplanationPanel(review, selection, 'Code Review');
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Code review error: ${error.message}`);
+        } finally {
+            this._isProcessing = false;
+            this._statusBar.hide();
+        }
+    };
+
     private showExplanationPanel(content: string, code: string, title: string) {
         const panel = vscode.window.createWebviewPanel(
             'codeExplanation',
@@ -129,44 +190,135 @@ export class AIAssistant {
         );
 
         panel.webview.html = this.getExplanationHtml(content, code);
+        panel.webview.onDidReceiveMessage(
+            (message: WebviewMessage) => {
+                switch (message.command) {
+                    case 'switchMode':
+                        if (message.mode) {
+                            this._currentViewMode = message.mode;
+                            panel.webview.html = this.getExplanationHtml(content, code);
+                        }
+                        break;
+                }
+            }
+        );
     }
 
     private getExplanationHtml(explanation: string, code: string): string {
+        const isChatMode = this._currentViewMode === ViewMode.Chat;
         return `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <style>
-                    ${this.getCommonStyles()}
-                    .code-block { 
-                        background: var(--vscode-editor-background);
-                        border: 1px solid var(--vscode-editorWidget-border);
-                        border-radius: 4px;
-                        padding: 10px;
-                        margin: 10px 0;
-                    }
-                    .explanation {
-                        line-height: 1.6;
-                        font-size: 14px;
-                    }
-                </style>
-                <link rel="stylesheet" 
-                    href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
-                <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-            </head>
-            <body>
-                <h1>Code Explanation</h1>
-                <div class="code-block">
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                ${this.getCommonStyles()}
+                .mode-toggle {
+                    display: inline-block;
+                    background: var(--vscode-button-secondaryBackground);
+                    border: 1px solid var(--vscode-button-border);
+                    border-radius: 16px;
+                    padding: 2px;
+                    margin-bottom: 16px;
+                }
+                .mode-button {
+                    padding: 6px 16px;
+                    border: none;
+                    background: transparent;
+                    color: var(--vscode-button-secondaryForeground);
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    font-size: 14px;
+                    outline: none;
+                }
+                .mode-button.active {
+                    background: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border-radius: 14px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                }
+                .mode-button:hover:not(.active) {
+                    background: var(--vscode-button-secondaryHoverBackground);
+                }
+                .content-tab {
+                    background: var(--vscode-editor-background);
+                    border: 1px solid var(--vscode-editorWidget-border);
+                    border-radius: 4px;
+                    padding: 10px;
+                    margin: 10px 0;
+                }
+                .content-section {
+                    display: none;
+                }
+                .content-section.active {
+                    display: block;
+                }
+                .explanation {
+                    line-height: 1.6;
+                    font-size: 14px;
+                }
+                pre {
+                    margin: 0;
+                }
+            </style>
+            <link rel="stylesheet" 
+                href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+        </head>
+        <body>
+            <div class="mode-toggle">
+                <button class="mode-button active" 
+                    onclick="switchTab('chat')" id="chat-btn">Chat</button>
+                <button class="mode-button"
+                    onclick="switchTab('code')" id="code-btn">Code Generation</button>
+            </div>
+
+            <div class="content-tab">
+                <div class="content-section active" id="chat-content">
+                    <h1>Code Explanation</h1>
+                    <div class="explanation">
+                        ${this.processExplanation(explanation)}
+                    </div>
+                </div>
+                <div class="content-section" id="code-content">
+                    <h1>Generated Code</h1>
                     <pre><code class="language-${vscode.window.activeTextEditor?.document.languageId}">${escapeHtml(code)}</code></pre>
                 </div>
-                <div class="explanation">
-                    ${this.processExplanation(explanation)}
-                </div>
-                <script>hljs.highlightAll();</script>
-            </body>
-            </html>
+            </div>
+
+            <script>
+                hljs.highlightAll();
+                const vscode = acquireVsCodeApi();
+                
+                function switchTab(mode) {
+                    // Update button states
+                    const chatBtn = document.getElementById('chat-btn');
+                    const codeBtn = document.getElementById('code-btn');
+                    const chatContent = document.getElementById('chat-content');
+                    const codeContent = document.getElementById('code-content');
+
+                    if (mode === 'chat') {
+                        chatBtn.classList.add('active');
+                        codeBtn.classList.remove('active');
+                        chatContent.classList.add('active');
+                        codeContent.classList.remove('active');
+                    } else {
+                        codeBtn.classList.add('active');
+                        chatBtn.classList.remove('active');
+                        codeContent.classList.add('active');
+                        chatContent.classList.remove('active');
+                    }
+
+                    // Notify VS Code of mode switch (optional)
+                    vscode.postMessage({
+                        command: 'switchMode',
+                        mode: mode
+                    });
+                }
+            </script>
+        </body>
+        </html>
         `;
     }
 
